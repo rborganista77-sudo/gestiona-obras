@@ -1,0 +1,88 @@
+/**
+ * BACKEND - Gestión de Obras
+ * PASO 2: Pega este código completo en Extensiones > Apps Script de tu Google Sheet.
+ * PASO 3: Implementar > Nueva implementación > Aplicación web
+ *   - Ejecutar como: Yo
+ *   - Quién tiene acceso: Cualquier usuario
+ *   Copia la URL que termina en /exec y guárdala, la necesitarás luego.
+ */
+
+const SHEETS = ["Workers", "Obras", "Imputaciones", "Facturas", "Vacaciones"];
+
+function doGet(e) {
+  return handleRequest(e);
+}
+
+function doPost(e) {
+  return handleRequest(e);
+}
+
+function handleRequest(e) {
+  try {
+    const action = (e.parameter.action || "getAll");
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    if (action === "getAll") {
+      const data = {};
+      SHEETS.forEach(name => {
+        data[name.toLowerCase()] = readSheet(ss, name);
+      });
+      return jsonResponse({ ok: true, data });
+    }
+
+    if (action === "saveAll") {
+      const body = JSON.parse(e.postData.contents);
+      SHEETS.forEach(name => {
+        const key = name.toLowerCase();
+        if (body[key]) writeSheet(ss, name, body[key]);
+      });
+      return jsonResponse({ ok: true });
+    }
+
+    return jsonResponse({ ok: false, error: "Acción no reconocida" });
+  } catch (err) {
+    return jsonResponse({ ok: false, error: err.toString() });
+  }
+}
+
+function getOrCreateSheet(ss, name) {
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) sheet = ss.insertSheet(name);
+  return sheet;
+}
+
+function readSheet(ss, name) {
+  const sheet = getOrCreateSheet(ss, name);
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return [];
+  const headers = values[0];
+  return values.slice(1)
+    .filter(row => row.some(cell => cell !== ""))
+    .map(row => {
+      const obj = {};
+      headers.forEach((h, i) => {
+        let v = row[i];
+        if (v === "true") v = true;
+        else if (v === "false") v = false;
+        obj[h] = v;
+      });
+      return obj;
+    });
+}
+
+function writeSheet(ss, name, records) {
+  const sheet = getOrCreateSheet(ss, name);
+  sheet.clear();
+  if (!records || records.length === 0) return;
+  const headers = Object.keys(records[0]);
+  const rows = records.map(r => headers.map(h => r[h] === undefined ? "" : r[h]));
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  if (rows.length > 0) {
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+  }
+}
+
+function jsonResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}

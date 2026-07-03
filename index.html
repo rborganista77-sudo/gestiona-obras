@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Gestión de Obras y Personal</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.0.0/dist/tabler-icons.min.css"/>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --surface-0: #f5f4f0;
+    --surface-1: #eceae3;
+    --surface-2: #ffffff;
+    --border: #e0ddd5;
+    --border-strong: #c8c5bc;
+    --text-primary: #1a1a19;
+    --text-secondary: #4a4a47;
+    --text-muted: #8a8a85;
+    --fill-accent: #2a78d6;
+    --on-accent: #ffffff;
+    --radius: 7px;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  body { margin: 0; font-family: var(--font-sans); background: var(--surface-0); color: var(--text-primary); }
+  input, select, button { font-family: inherit; font-size: 13px; }
+  input, select {
+    border: 0.5px solid var(--border-strong);
+    border-radius: var(--radius);
+    padding: 6px 10px;
+    background: var(--surface-2);
+    color: var(--text-primary);
+    outline: none;
+  }
+  input:focus, select:focus { border-color: var(--fill-accent); box-shadow: 0 0 0 2px rgba(42,120,214,0.15); }
+  button { cursor: pointer; border-radius: var(--radius); border: 0.5px solid var(--border); background: var(--surface-1); color: var(--text-primary); padding: 5px 12px; }
+  button:hover { opacity: 0.85; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useRef, useEffect } = React;
+
+const TABS = [
+  { id:"dashboard", label:"Dashboard", icon:"ti-layout-dashboard" },
+  { id:"obras",     label:"Obras",     icon:"ti-building-factory-2" },
+  { id:"personal",  label:"Personal",  icon:"ti-users" },
+  { id:"imputaciones", label:"Horas",  icon:"ti-clock" },
+  { id:"facturas",  label:"Facturas",  icon:"ti-receipt" },
+  { id:"alertas",   label:"Alertas",   icon:"ti-bell" },
+];
+const CATEGORIAS    = ["Encargado","Oficial 1ª","Oficial 2ª","Ayudante","Peón","Administrativo"];
+const TIPOS_AUSENCIA= ["Vacaciones","Baja médica","Permiso personal","Festivo","IT"];
+const ESTADOS_OBRA  = ["Abierta","En ejecución","Pausada","Cerrada"];
+const IVA_OPTS      = [0,4,10,21];
+
+const seed_workers = [
+  {id:1,nombre:"Carlos Martínez",categoria:"Oficial 1ª",costeHora:22,activo:true},
+  {id:2,nombre:"Ana López",       categoria:"Ayudante",  costeHora:16,activo:true},
+  {id:3,nombre:"Pedro Ruiz",      categoria:"Encargado", costeHora:28,activo:true},
+  {id:4,nombre:"Laura Gómez",     categoria:"Oficial 2ª",costeHora:19,activo:true},
+];
+const seed_obras = [
+  {id:1,nombre:"Reforma Local Calle Mayor",   cliente:"Mercantil SA",   inicio:"2026-01-15",fin:"2026-06-30",estado:"Abierta",     presupuesto:45000},
+  {id:2,nombre:"Vivienda Unifamiliar Norte",  cliente:"Familia García", inicio:"2026-03-01",fin:"2026-09-30",estado:"En ejecución",presupuesto:120000},
+  {id:3,nombre:"Oficinas Centro Ciudad",      cliente:"Corp Group SL",  inicio:"2026-04-10",fin:"2026-12-20",estado:"Abierta",     presupuesto:85000},
+];
+const seed_imputaciones = [
+  {id:1,obraId:1,trabajadorId:1,fecha:"2026-06-01",horas:8,concepto:"Trabajo normal"},
+  {id:2,obraId:1,trabajadorId:2,fecha:"2026-06-01",horas:8,concepto:"Trabajo normal"},
+  {id:3,obraId:2,trabajadorId:3,fecha:"2026-06-02",horas:6,concepto:"Visita dirección"},
+  {id:4,obraId:2,trabajadorId:1,fecha:"2026-06-03",horas:8,concepto:"Estructura"},
+  {id:5,obraId:3,trabajadorId:4,fecha:"2026-06-04",horas:7,concepto:"Tabiquería"},
+  {id:6,obraId:1,trabajadorId:3,fecha:"2026-06-05",horas:4,concepto:"Supervisión"},
+];
+const seed_facturas = [
+  {id:1,obraId:1,tipo:"gasto",proveedor:"Materiales SA",    concepto:"Materiales obra",   base:3200, iva:21,fecha:"2026-05-10",pagada:true, numFactura:"F-2026-001"},
+  {id:2,obraId:1,tipo:"cobro",proveedor:"Mercantil SA",     concepto:"Certificación 1",   base:15000,iva:21,fecha:"2026-05-20",pagada:false,numFactura:"C-2026-001"},
+  {id:3,obraId:2,tipo:"gasto",proveedor:"Herramientas Pro", concepto:"Alquiler maquinaria",base:1800,iva:21,fecha:"2026-06-05",pagada:true, numFactura:"F-2026-002"},
+  {id:4,obraId:2,tipo:"cobro",proveedor:"Familia García",   concepto:"Certificación 1",   base:30000,iva:21,fecha:"2026-06-10",pagada:true, numFactura:"C-2026-002"},
+  {id:5,obraId:3,tipo:"gasto",proveedor:"Electricidad Total",concepto:"Inst. eléctrica",  base:4500, iva:21,fecha:"2026-06-12",pagada:false,numFactura:"F-2026-003"},
+  {id:6,obraId:3,tipo:"cobro",proveedor:"Corp Group SL",    concepto:"Anticipo obra",     base:20000,iva:21,fecha:"2026-06-15",pagada:true, numFactura:"C-2026-003"},
+];
+const seed_vacaciones = [
+  {id:1,trabajadorId:1,desde:"2026-08-01",hasta:"2026-08-15",tipo:"Vacaciones"},
+  {id:2,trabajadorId:2,desde:"2026-07-15",hasta:"2026-07-22",tipo:"Vacaciones"},
+  {id:3,trabajadorId:3,desde:"2026-06-20",hasta:"2026-06-21",tipo:"Permiso personal"},
+];
+
+/* ── helpers ── */
+const fmt  = n => (n??0).toLocaleString("es-ES",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
+const fmtK = n => { const v=n??0; return Math.abs(v)>=1000?(v/1000).toFixed(1)+"k €":fmt(v); };
+const pct  = n => { const v=n??0; return (v>=0?"+":"")+v.toFixed(1)+"%"; };
+const nextId = arr => arr.length ? Math.max(...arr.map(x=>x.id))+1 : 1;
+const sem  = p => p>=15?{color:"#0ca30c",icon:"ti-trending-up"}:p>=0?{color:"#fab219",icon:"ti-minus"}:{color:"#d03b3b",icon:"ti-trending-down"};
+
+/* ── small UI ── */
+function Badge({children,color}){
+  const c={green:{bg:"#eaf3de",text:"#3B6D11"},yellow:{bg:"#faeeda",text:"#854F0B"},red:{bg:"#fcebeb",text:"#A32D2D"},blue:{bg:"#e6f1fb",text:"#185FA5"},gray:{bg:"#f1efe8",text:"#5F5E5A"}}[color]||{bg:"#f1efe8",text:"#5F5E5A"};
+  return <span style={{background:c.bg,color:c.text,padding:"2px 8px",borderRadius:99,fontSize:11,fontWeight:500,whiteSpace:"nowrap"}}>{children}</span>;
+}
+function Stat({label,value,sub,color}){
+  return(
+    <div style={{background:"var(--surface-1)",borderRadius:"var(--radius)",padding:"11px 13px"}}>
+      <p style={{fontSize:11,color:"var(--text-muted)",margin:"0 0 3px",fontWeight:500}}>{label}</p>
+      <p style={{fontSize:18,fontWeight:500,margin:0,color:color||"var(--text-primary)"}}>{value}</p>
+      {sub&&<p style={{fontSize:11,color:"var(--text-muted)",margin:"2px 0 0"}}>{sub}</p>}
+    </div>
+  );
+}
+function Modal({title,onClose,onSave,children}){
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000,padding:16}}>
+      <div style={{background:"var(--surface-2)",border:"0.5px solid var(--border)",borderRadius:12,width:"100%",maxWidth:480,maxHeight:"90vh",overflow:"auto"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:"0.5px solid var(--border)"}}>
+          <h3 style={{margin:0,fontSize:15,fontWeight:500}}>{title}</h3>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,color:"var(--text-muted)",lineHeight:1,padding:"0 4px"}}>×</button>
+        </div>
+        <div style={{padding:18,display:"grid",gap:10}}>{children}</div>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8,padding:"14px 18px",borderTop:"0.5px solid var(--border)"}}>
+          <button onClick={onClose}>Cancelar</button>
+          <button onClick={onSave} style={{background:"var(--fill-accent)",color:"#fff",border:"none",padding:"7px 20px",borderRadius:"var(--radius)",fontWeight:500}}>Guardar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+const Field = ({label,children}) => <div><label style={{display:"block",fontSize:12,fontWeight:500,color:"var(--text-secondary)",marginBottom:4}}>{label}</label>{children}</div>;
+const Inp = ({value,onChange,type="text",placeholder=""}) => <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%"}}/>;
+const Sel = ({value,onChange,options}) => <select value={value} onChange={e=>onChange(e.target.value)} style={{width:"100%"}}>{options.map(o=><option key={o.v??o} value={o.v??o}>{o.l??o}</option>)}</select>;
+
+function MiniBar({value,max,color}){
+  const w=max>0?Math.min(100,(value/max)*100):0;
+  return <div style={{background:"var(--surface-0)",borderRadius:4,height:6,overflow:"hidden"}}><div style={{width:`${w}%`,height:"100%",background:color||"#2a78d6",borderRadius:4}}/></div>;
+}
+function ChartBar({data,height=110}){
+  const max=Math.max(...data.map(d=>Math.abs(d.value)),1);
+  return(
+    <div style={{display:"flex",alignItems:"flex-end",gap:8,height,padding:"0 4px"}}>
+      {data.map((d,i)=>{
+        const h=Math.round((Math.abs(d.value)/max)*height*0.82);
+        return(
+          <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+            <span style={{fontSize:9,color:"var(--text-muted)",fontWeight:500}}>{fmtK(d.value)}</span>
+            <div style={{width:"100%",height:h,background:d.color||"#2a78d6",borderRadius:"4px 4px 0 0",minHeight:4}} title={`${d.label}: ${fmt(d.value)}`}/>
+            <span style={{fontSize:9,color:"var(--text-muted)",textAlign:"center",lineHeight:1.2}}>{d.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+function ShareModal({onClose}){
+  const canvasRef=useRef(null);
+  const url=window.location.href;
+  useEffect(()=>{
+    const canvas=canvasRef.current; if(!canvas) return;
+    const ctx=canvas.getContext("2d"),size=200,cells=25,cell=size/cells;
+    canvas.width=size; canvas.height=size;
+    ctx.fillStyle="#fff"; ctx.fillRect(0,0,size,size);
+    const hash=url.split("").reduce((a,c)=>((a<<5)-a)+c.charCodeAt(0),0);
+    const marker=(x,y)=>{ctx.fillStyle="#1a1a19";ctx.fillRect(x*cell,y*cell,7*cell,7*cell);ctx.fillStyle="#fff";ctx.fillRect((x+1)*cell,(y+1)*cell,5*cell,5*cell);ctx.fillStyle="#1a1a19";ctx.fillRect((x+2)*cell,(y+2)*cell,3*cell,3*cell);};
+    marker(0,0);marker(cells-7,0);marker(0,cells-7);
+    for(let r=0;r<cells;r++) for(let c=0;c<cells;c++){
+      if(!((r<9&&c<9)||(r<9&&c>cells-10)||(r>cells-10&&c<9))){
+        if(((hash^(r*31+c*17)^(r*c))&1)){ctx.fillStyle="#1a1a19";ctx.fillRect(c*cell,r*cell,cell,cell);}
+      }
+    }
+  },[]);
+  const share=()=>{
+    if(navigator.share) navigator.share({title:"Gestión de Obras",url}).catch(()=>{});
+    else { navigator.clipboard?.writeText(url); alert("Enlace copiado al portapapeles"); }
+  };
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3000,padding:16}}>
+      <div style={{background:"var(--surface-2)",borderRadius:16,width:"100%",maxWidth:340}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",borderBottom:"0.5px solid var(--border)"}}>
+          <h3 style={{margin:0,fontSize:15,fontWeight:500}}>Compartir / Acceso directo</h3>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,color:"var(--text-muted)"}}>×</button>
+        </div>
+        <div style={{padding:20,textAlign:"center"}}>
+          <div style={{display:"inline-block",background:"#fff",padding:12,borderRadius:10,border:"0.5px solid var(--border)",marginBottom:14}}>
+            <canvas ref={canvasRef} style={{display:"block",width:160,height:160}}/>
+          </div>
+          <p style={{fontSize:12,color:"var(--text-muted)",margin:"0 0 12px"}}>Escanea con el móvil o usa los botones</p>
+          <div style={{display:"grid",gap:8,marginBottom:14}}>
+            <button onClick={share} style={{background:"var(--fill-accent)",color:"#fff",border:"none",padding:"10px",borderRadius:"var(--radius)",fontWeight:500,fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+              <i className="ti ti-share" style={{fontSize:16}}/>Compartir enlace
+            </button>
+            <button onClick={()=>{navigator.clipboard?.writeText(url);alert("Copiado");}} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"8px"}}>
+              <i className="ti ti-copy" style={{fontSize:14}}/>Copiar enlace
+            </button>
+          </div>
+          <div style={{background:"#eaf3de",borderRadius:8,padding:"10px 12px",textAlign:"left"}}>
+            <p style={{margin:"0 0 4px",fontSize:12,fontWeight:500,color:"#3B6D11"}}>Añadir a pantalla de inicio</p>
+            <p style={{margin:0,fontSize:11,color:"#3B6D11"}}><b>iPhone:</b> Safari → compartir → "Añadir a inicio"<br/><b>Android:</b> Chrome → menú ⋮ → "Añadir a pantalla de inicio"</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   APP PRINCIPAL
+══════════════════════════════════════════ */
+const STORAGE_KEY = "gestion_obras_data_v1";
+const PASSWORD = "obras2026"; // ← CAMBIA ESTO por tu contraseña
+const AUTH_KEY = "gestion_obras_auth";
+const API_URL_KEY = "gestion_obras_api_url";
+
+function loadLocal(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){ console.warn("No se pudo leer localStorage", e); }
+  return null;
+}
+function saveLocal(data){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }catch(e){ console.warn(e); }
+}
+function getApiUrl(){
+  try{ return localStorage.getItem(API_URL_KEY) || ""; }catch(e){ return ""; }
+}
+function setApiUrl(url){
+  try{ localStorage.setItem(API_URL_KEY, url); }catch(e){}
+}
+
+async function fetchFromSheet(apiUrl){
+  const res = await fetch(`${apiUrl}?action=getAll`);
+  const json = await res.json();
+  if(!json.ok) throw new Error(json.error || "Error al leer datos");
+  return json.data;
+}
+async function pushToSheet(apiUrl, payload){
+  const res = await fetch(apiUrl, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const json = await res.json();
+  if(!json.ok) throw new Error(json.error || "Error al guardar datos");
+}
+
+const saved = loadLocal();
+
+function LoginScreen({ onLogin }) {
+  const [pass, setPass] = useState("");
+  const [error, setError] = useState(false);
+  const handleLogin = () => {
+    if (pass === PASSWORD) {
+      try { localStorage.setItem(AUTH_KEY, "1"); } catch(e) {}
+      onLogin();
+    } else {
+      setError(true);
+      setPass("");
+      setTimeout(() => setError(false), 2000);
+    }
+  };
+  return (
+    <div style={{minHeight:"100vh",background:"var(--surface-0)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"var(--surface-2)",border:"0.5px solid var(--border)",borderRadius:16,padding:32,width:"100%",maxWidth:340,textAlign:"center"}}>
+        <div style={{width:56,height:56,background:"#2a78d6",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
+          <i className="ti ti-building-factory-2" style={{fontSize:28,color:"#fff"}}/>
+        </div>
+        <h1 style={{margin:"0 0 4px",fontSize:18,fontWeight:500}}>Gestión de Obras</h1>
+        <p style={{margin:"0 0 24px",fontSize:13,color:"var(--text-muted)"}}>Introduce la contraseña para acceder</p>
+        <div style={{marginBottom:12}}>
+          <input
+            type="password"
+            value={pass}
+            onChange={e=>setPass(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+            placeholder="Contraseña"
+            autoFocus
+            style={{width:"100%",boxSizing:"border-box",padding:"10px 14px",fontSize:15,borderRadius:"var(--radius)",border: error ? "1.5px solid #d03b3b" : "0.5px solid var(--border-strong)",textAlign:"center",background: error ? "#fcebeb" : "var(--surface-2)"}}
+          />
+          {error && <p style={{margin:"6px 0 0",fontSize:12,color:"#d03b3b"}}>Contraseña incorrecta, inténtalo de nuevo</p>}
+        </div>
+        <button
+          onClick={handleLogin}
+          style={{width:"100%",background:"#2a78d6",color:"#fff",border:"none",borderRadius:"var(--radius)",padding:"10px",fontSize:15,fontWeight:500,cursor:"pointer"}}
+        >
+          Entrar
+        </button>
+        <p style={{margin:"16px 0 0",fontSize:11,color:"var(--text-muted)"}}>Solo el equipo autorizado puede acceder</p>
+      </div>
+    </div>
+  );
+}
+
+function ConnectModal({ currentUrl, onClose, onSave }){
+  const [url, setUrl] = useState(currentUrl || "");
+  return(
+    <Modal title="Conectar con Google Sheets (equipo compartido)" onClose={onClose} onSave={()=>onSave(url.trim())}>
+      <p style={{fontSize:12,color:"var(--text-muted)",margin:0,lineHeight:1.5}}>
+        Pega aquí la URL de tu Google Apps Script (termina en <code>/exec</code>). Todos los que usen esta misma URL verán y editarán los mismos datos.
+      </p>
+      <Field label="URL de la API (Apps Script)">
+        <Inp value={url} onChange={setUrl} placeholder="https://script.google.com/macros/s/AAAA.../exec"/>
+      </Field>
+      <p style={{fontSize:11,color:"var(--text-muted)",margin:0}}>
+        Si lo dejas vacío, la app funcionará solo en este dispositivo (modo local).
+      </p>
+    </Modal>
+  );
+}
+
+function App(){
+  const [authed, setAuthed] = useState(()=>{
+    try { return localStorage.getItem(AUTH_KEY) === "1"; } catch(e) { return false; }
+  });
+
+  if (!authed) return <LoginScreen onLogin={()=>setAuthed(true)} />;
+
+  const [tab,setTab]       = useState("dashboard");
+  const [workers,setWorkers]           = useState(saved?.workers      || seed_workers);
+  const [obras,setObras]               = useState(saved?.obras        || seed_obras);
+  const [imputaciones,setImputaciones] = useState(saved?.imputaciones || seed_imputaciones);
+  const [facturas,setFacturas]         = useState(saved?.facturas     || seed_facturas);
+  const [vacaciones,setVacaciones]     = useState(saved?.vacaciones   || seed_vacaciones);
+  const [savedFlash,setSavedFlash]     = useState(false);
+  const [apiUrl,setApiUrlState]        = useState(getApiUrl());
+  const [showConnect,setShowConnect]   = useState(false);
+  const [syncStatus,setSyncStatus]     = useState("idle"); // idle | loading | synced | error
+  const [syncError,setSyncError]       = useState("");
+  const firstLoad = useRef(true);
+
+  // Carga inicial desde Google Sheets si hay URL configurada
+  useEffect(()=>{
+    if(!apiUrl) return;
+    setSyncStatus("loading");
+    fetchFromSheet(apiUrl).then(data=>{
+      if(data.workers?.length)      setWorkers(data.workers.map(w=>({...w,id:Number(w.id),costeHora:Number(w.costeHora),activo: w.activo===true||w.activo==="true"})));
+      if(data.obras?.length)        setObras(data.obras.map(o=>({...o,id:Number(o.id),presupuesto:Number(o.presupuesto)})));
+      if(data.imputaciones?.length) setImputaciones(data.imputaciones.map(i=>({...i,id:Number(i.id),obraId:Number(i.obraId),trabajadorId:Number(i.trabajadorId),horas:Number(i.horas)})));
+      if(data.facturas?.length)     setFacturas(data.facturas.map(f=>({...f,id:Number(f.id),obraId:Number(f.obraId),base:Number(f.base),iva:Number(f.iva),pagada:f.pagada===true||f.pagada==="true"})));
+      if(data.vacaciones?.length)   setVacaciones(data.vacaciones.map(v=>({...v,id:Number(v.id),trabajadorId:Number(v.trabajadorId)})));
+      setSyncStatus("synced");
+      firstLoad.current = false;
+    }).catch(err=>{
+      setSyncStatus("error"); setSyncError(err.message);
+      firstLoad.current = false;
+    });
+  }, [apiUrl]);
+
+  // Autoguardado: local siempre, y a Google Sheets si hay URL (con debounce)
+  useEffect(()=>{
+    const payload = { workers, obras, imputaciones, facturas, vacaciones };
+    saveLocal(payload);
+    setSavedFlash(true);
+    const flashT = setTimeout(()=>setSavedFlash(false), 1200);
+
+    if(!apiUrl || firstLoad.current){ return ()=>clearTimeout(flashT); }
+
+    setSyncStatus("loading");
+    const syncT = setTimeout(()=>{
+      pushToSheet(apiUrl, payload)
+        .then(()=>setSyncStatus("synced"))
+        .catch(err=>{ setSyncStatus("error"); setSyncError(err.message); });
+    }, 1500); // debounce para no saturar la API con cada tecla
+
+    return ()=>{ clearTimeout(flashT); clearTimeout(syncT); };
+  }, [workers, obras, imputaciones, facturas, vacaciones]);
+
+  const handleConnect = (url) => {
+    setApiUrl(url);
+    setApiUrlState(url);
+    setShowConnect(false);
+    firstLoad.current = true;
+  };
+  const [filterObra,setFilterObra]     = useState("all");
+  const [filterTipo,setFilterTipo]     = useState("all");
+  const [searchW,setSearchW]           = useState("");
+  const [showQR,setShowQR]             = useState(false);
+  const [showBanner,setShowBanner]     = useState(true);
+  const [detailObra,setDetailObra]     = useState(null);
+
+  const [mW,setMW]=useState(null);const [wF,setWF]=useState({});
+  const [mO,setMO]=useState(null);const [oF,setOF]=useState({});
+  const [mI,setMI]=useState(null);const [iF,setIF]=useState({});
+  const [mF,setMF]=useState(null);const [fF,setFF]=useState({});
+  const [mV,setMV]=useState(null);const [vF,setVF]=useState({});
+
+  /* financials */
+  const obraFin = useMemo(()=>obras.map(o=>{
+    const imps=imputaciones.filter(i=>i.obraId===o.id);
+    const costePersonal=imps.reduce((s,i)=>{const w=workers.find(w=>w.id===i.trabajadorId);return s+(w?w.costeHora*i.horas:0);},0);
+    const facts=facturas.filter(f=>f.obraId===o.id);
+    const gastosFact=facts.filter(f=>f.tipo==="gasto").reduce((s,f)=>s+f.base,0);
+    const ingresos  =facts.filter(f=>f.tipo==="cobro").reduce((s,f)=>s+f.base,0);
+    const ivaG=facts.filter(f=>f.tipo==="gasto").reduce((s,f)=>s+f.base*f.iva/100,0);
+    const ivaC=facts.filter(f=>f.tipo==="cobro").reduce((s,f)=>s+f.base*f.iva/100,0);
+    const factPend=facts.filter(f=>f.tipo==="cobro"&&!f.pagada).reduce((s,f)=>s+f.base*(1+f.iva/100),0);
+    const gastPend=facts.filter(f=>f.tipo==="gasto"&&!f.pagada).reduce((s,f)=>s+f.base*(1+f.iva/100),0);
+    const gastoTotal=costePersonal+gastosFact;
+    const margen=ingresos-gastoTotal;
+    const pctMargen=ingresos>0?(margen/ingresos)*100:gastoTotal>0?-100:0;
+    const horas=imps.reduce((s,i)=>s+i.horas,0);
+    return {...o,costePersonal,gastosFact,ingresos,gastoTotal,margen,pctMargen,ivaG,ivaC,factPend,gastPend,horas,facts,imps};
+  }),[obras,imputaciones,facturas,workers]);
+
+  const tot = useMemo(()=>obraFin.reduce((s,o)=>({
+    ingresos:s.ingresos+o.ingresos, gastoTotal:s.gastoTotal+o.gastoTotal,
+    costePersonal:s.costePersonal+o.costePersonal, gastosFact:s.gastosFact+o.gastosFact,
+    margen:s.margen+o.margen, ivaG:s.ivaG+o.ivaG, ivaC:s.ivaC+o.ivaC,
+    factPend:s.factPend+o.factPend, gastPend:s.gastPend+o.gastPend,
+  }),{ingresos:0,gastoTotal:0,costePersonal:0,gastosFact:0,margen:0,ivaG:0,ivaC:0,factPend:0,gastPend:0}),[obraFin]);
+
+  const wStats = useMemo(()=>workers.map(w=>{
+    const imps=imputaciones.filter(i=>i.trabajadorId===w.id);
+    const totalHoras=imps.reduce((s,i)=>s+i.horas,0);
+    return {...w,totalHoras,totalCoste:totalHoras*w.costeHora,dias:new Set(imps.map(i=>i.fecha)).size,vacs:vacaciones.filter(v=>v.trabajadorId===w.id)};
+  }),[workers,imputaciones,vacaciones]);
+
+  const alertas = useMemo(()=>{
+    const al=[];
+    obraFin.forEach(o=>{
+      if(o.pctMargen<0) al.push({tipo:"danger",obra:o.nombre,msg:`Margen negativo (${pct(o.pctMargen)})`});
+      else if(o.pctMargen<10) al.push({tipo:"warning",obra:o.nombre,msg:`Rentabilidad baja (${pct(o.pctMargen)})`});
+      if(o.factPend>0) al.push({tipo:"warning",obra:o.nombre,msg:`Cobros pendientes: ${fmt(o.factPend)}`});
+      if(o.gastPend>0) al.push({tipo:"info",   obra:o.nombre,msg:`Pagos pendientes: ${fmt(o.gastPend)}`});
+      const dias=Math.ceil((new Date(o.fin)-new Date("2026-06-29"))/864e5);
+      if(o.estado!=="Cerrada"&&dias<=0)    al.push({tipo:"danger", obra:o.nombre,msg:`Plazo vencido (${o.fin})`});
+      else if(o.estado!=="Cerrada"&&dias<30) al.push({tipo:"warning",obra:o.nombre,msg:`Finaliza en ${dias} días`});
+    });
+    return al;
+  },[obraFin]);
+
+  const exportCSV = () => {
+    const rows=obraFin.map(o=>({Obra:o.nombre,Cliente:o.cliente,Estado:o.estado,Presupuesto:o.presupuesto.toFixed(2),Ingresos:o.ingresos.toFixed(2),"Coste Personal":o.costePersonal.toFixed(2),"Gasto Proveedores":o.gastosFact.toFixed(2),"Gasto Total":o.gastoTotal.toFixed(2),Margen:o.margen.toFixed(2),"%Margen":o.pctMargen.toFixed(2)}));
+    const h=Object.keys(rows[0]);
+    const csv=[h.join(";"),...rows.map(r=>h.map(k=>String(r[k])).join(";"))].join("\n");
+    const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8;"})); a.download="informe_obras.csv"; a.click();
+  };
+
+  const TH=({children})=><th style={{padding:"8px 12px",textAlign:"left",fontSize:11,fontWeight:500,color:"var(--text-muted)",borderBottom:"0.5px solid var(--border)",whiteSpace:"nowrap"}}>{children}</th>;
+  const TD=({children,style})=><td style={{padding:"8px 12px",fontSize:13,borderBottom:"0.5px solid var(--border)",...style}}>{children}</td>;
+
+  return(
+    <div>
+      {/* Banner móvil */}
+      {showBanner&&(
+        <div style={{background:"#e6f1fb",borderBottom:"0.5px solid #b5d4f4",padding:"7px 14px",display:"flex",alignItems:"center",gap:10}}>
+          <i className="ti ti-device-mobile" style={{fontSize:17,color:"#185FA5",flexShrink:0}}/>
+          <span style={{fontSize:12,color:"#185FA5",flex:1}}>Añade esta app a la pantalla de inicio para acceso rápido desde el móvil</span>
+          <button onClick={()=>setShowBanner(false)} style={{background:"none",border:"none",color:"#185FA5",fontSize:18,padding:0,lineHeight:1}}>×</button>
+        </div>
+      )}
+
+      {/* Header */}
+      <div style={{background:"var(--surface-2)",borderBottom:"0.5px solid var(--border)",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <button onClick={()=>setTab("dashboard")} title="Inicio" style={{background:"#2a78d6",border:"none",borderRadius:10,width:38,height:38,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <i className="ti ti-building-factory-2" style={{fontSize:20,color:"#fff"}}/>
+          </button>
+          <div>
+            <h1 style={{margin:0,fontSize:15,fontWeight:500}}>Gestión de Obras y Personal</h1>
+            <p style={{margin:0,fontSize:11,color:"var(--text-muted)"}}>Control integral · Financiero · Fiscal</p>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {alertas.length>0&&(
+            <button onClick={()=>setTab("alertas")} style={{background:"#fcebeb",border:"0.5px solid #f7c1c1",color:"#A32D2D",padding:"5px 10px",fontSize:12,fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
+              <i className="ti ti-bell"/> {alertas.length} alertas
+            </button>
+          )}
+          <button onClick={()=>setShowQR(true)} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",fontWeight:500}}>
+            <i className="ti ti-device-mobile" style={{fontSize:15}}/>Compartir
+          </button>
+          <button onClick={()=>setShowConnect(true)} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",fontWeight:500,background: apiUrl ? "#eaf3de" : "var(--surface-1)", color: apiUrl ? "#3B6D11" : "var(--text-primary)", border: apiUrl ? "0.5px solid #c9e0b0" : "0.5px solid var(--border)"}}>
+            <i className={`ti ${apiUrl?"ti-cloud-check":"ti-cloud-off"}`} style={{fontSize:15}}/>
+            {apiUrl ? "Compartido (equipo)" : "Conectar equipo"}
+          </button>
+          <button onClick={exportCSV} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",fontWeight:500}}>
+            <i className="ti ti-download" style={{fontSize:15}}/>Exportar CSV
+          </button>
+          <button onClick={()=>{ if(confirm("¿Borrar todos los datos guardados y restaurar los de ejemplo?")){ localStorage.removeItem(STORAGE_KEY); window.location.reload(); } }} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",fontWeight:500,color:"#A32D2D"}}>
+            <i className="ti ti-trash" style={{fontSize:15}}/>Reiniciar datos
+          </button>
+          <button onClick={()=>{ localStorage.removeItem(AUTH_KEY); window.location.reload(); }} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",fontWeight:500,color:"var(--text-muted)"}}>
+            <i className="ti ti-logout" style={{fontSize:15}}/>Cerrar sesión
+          </button>
+        </div>
+      </div>
+
+      {/* Barra de estado de sincronización */}
+      {apiUrl && syncStatus==="error" && (
+        <div style={{background:"#fcebeb",borderBottom:"0.5px solid #f7c1c1",padding:"6px 14px",fontSize:12,color:"#A32D2D",display:"flex",alignItems:"center",gap:8}}>
+          <i className="ti ti-alert-circle"/> Error de sincronización: {syncError}. Los cambios se han guardado localmente.
+        </div>
+      )}
+
+      {/* Indicador de guardado automático */}
+      <div style={{position:"fixed",bottom:14,right:14,zIndex:500,background:savedFlash?(apiUrl?"#185FA5":"#0ca30c"):"transparent",color:"#fff",borderRadius:99,padding:savedFlash?"6px 14px":"0",fontSize:12,fontWeight:500,opacity:savedFlash?1:0,transition:"all .3s ease",display:"flex",alignItems:"center",gap:6,pointerEvents:"none"}}>
+        <i className={`ti ${apiUrl?"ti-cloud-upload":"ti-device-floppy"}`} style={{fontSize:14}}/>
+        {apiUrl ? "Sincronizando con el equipo…" : "Guardado automáticamente"}
+      </div>
+
+      {showConnect && <ConnectModal currentUrl={apiUrl} onClose={()=>setShowConnect(false)} onSave={handleConnect}/>}
+
+      {/* Tabs */}
+      <div style={{background:"var(--surface-2)",borderBottom:"0.5px solid var(--border)",padding:"0 12px",display:"flex",gap:2,overflowX:"auto"}}>
+        {TABS.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"9px 12px",border:"none",borderBottom:tab===t.id?"2px solid #2a78d6":"2px solid transparent",background:"none",fontSize:13,fontWeight:tab===t.id?500:400,color:tab===t.id?"#2a78d6":"var(--text-secondary)",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>
+            <i className={`ti ${t.icon}`} style={{fontSize:14}}/>
+            {t.label}
+            {t.id==="alertas"&&alertas.length>0&&<span style={{background:"#d03b3b",color:"#fff",borderRadius:99,fontSize:10,padding:"0 5px",fontWeight:500,lineHeight:"16px"}}>{alertas.length}</span>}
+          </button>
+        ))}
+      </div>
+
+      <div style={{padding:"16px 14px",paddingBottom:24}}>
+
+        {/* ═══ DASHBOARD ═══ */}
+        {tab==="dashboard"&&(
+          <div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8,marginBottom:16}}>
+              <Stat label="Ingresos totales"  value={fmtK(tot.ingresos)}      color="#0ca30c"/>
+              <Stat label="Gastos totales"    value={fmtK(tot.gastoTotal)}    color="#d03b3b"/>
+              <Stat label="Margen bruto"      value={fmtK(tot.margen)}        color={tot.margen>=0?"#185FA5":"#d03b3b"}/>
+              <Stat label="Rentabilidad"      value={pct(tot.ingresos>0?(tot.margen/tot.ingresos)*100:0)} color={tot.margen>=0?"#0ca30c":"#d03b3b"}/>
+              <Stat label="Coste personal"    value={fmtK(tot.costePersonal)}/>
+              <Stat label="Gasto proveedores" value={fmtK(tot.gastosFact)}/>
+              <Stat label="IVA a liquidar"    value={fmtK(tot.ivaC-tot.ivaG)} color={tot.ivaC-tot.ivaG>0?"#d03b3b":"#0ca30c"} sub={tot.ivaC-tot.ivaG>0?"A ingresar":"A compensar"}/>
+              <Stat label="Cobros pendientes" value={fmtK(tot.factPend)}      color="#fab219"/>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+              <div style={{background:"var(--surface-2)",border:"0.5px solid var(--border)",borderRadius:12,padding:14}}>
+                <p style={{margin:"0 0 10px",fontSize:12,fontWeight:500,color:"var(--text-secondary)"}}>Ingresos por obra</p>
+                <ChartBar data={obraFin.map((o,i)=>({label:o.nombre.split(" ").slice(0,2).join(" "),value:o.ingresos,color:["#2a78d6","#1baf7a","#eda100"][i%3]}))}/>
+              </div>
+              <div style={{background:"var(--surface-2)",border:"0.5px solid var(--border)",borderRadius:12,padding:14}}>
+                <p style={{margin:"0 0 10px",fontSize:12,fontWeight:500,color:"var(--text-secondary)"}}>Margen por obra</p>
+                <ChartBar data={obraFin.map(o=>({label:o.nombre.split(" ").slice(0,2).join(" "),value:o.margen,color:o.margen>=0?"#0ca30c":"#d03b3b"}))}/>
+              </div>
+            </div>
+
+            <div style={{background:"#e6f1fb",border:"0.5px solid #b5d4f4",borderRadius:10,padding:12,marginBottom:14}}>
+              <p style={{margin:"0 0 6px",fontSize:12,fontWeight:500,color:"#185FA5"}}><i className="ti ti-report-money" style={{marginRight:5}}/>Posición fiscal IVA</p>
+              <div style={{display:"flex",flexWrap:"wrap",gap:16,fontSize:13}}>
+                <span>Repercutido: <b>{fmt(tot.ivaC)}</b></span>
+                <span>Soportado: <b>{fmt(tot.ivaG)}</b></span>
+                <span style={{fontWeight:500,color:tot.ivaC-tot.ivaG>=0?"#d03b3b":"#0ca30c"}}>{tot.ivaC-tot.ivaG>=0?"A ingresar:":"A compensar:"} <b>{fmt(Math.abs(tot.ivaC-tot.ivaG))}</b></span>
+              </div>
+            </div>
+
+            <div style={{background:"var(--surface-2)",border:"0.5px solid var(--border)",borderRadius:12,overflow:"hidden"}}>
+              <div style={{padding:"11px 14px",borderBottom:"0.5px solid var(--border)"}}><p style={{margin:0,fontSize:14,fontWeight:500}}>Resumen de obras</p></div>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead><tr>{["","Obra","Estado","Ingresos","Gasto total","Margen","%",""].map(h=><TH key={h}>{h}</TH>)}</tr></thead>
+                  <tbody>
+                    {obraFin.map(o=>{
+                      const s=sem(o.pctMargen);
+                      return(
+                        <tr key={o.id} onMouseEnter={e=>e.currentTarget.style.background="var(--surface-1)"} onMouseLeave={e=>e.currentTarget.style.background=""}>
+                          <TD><i className={`ti ${s.icon}`} style={{color:s.color,fontSize:15}}/></TD>
+                          <TD><span style={{fontWeight:500}}>{o.nombre}</span><br/><span style={{fontSize:11,color:"var(--text-muted)"}}>{o.cliente}</span></TD>
+                          <TD><Badge color={o.estado==="Cerrada"?"gray":o.estado==="Pausada"?"yellow":"green"}>{o.estado}</Badge></TD>
+                          <TD style={{color:"#0ca30c",fontWeight:500}}>{fmt(o.ingresos)}</TD>
+                          <TD style={{color:"#d03b3b"}}>{fmt(o.gastoTotal)}</TD>
+                          <TD style={{fontWeight:500,color:o.margen>=0?"#0ca30c":"#d03b3b"}}>{fmt(o.margen)}</TD>
+                          <TD style={{fontWeight:500,color:s.color}}>{pct(o.pctMargen)}</TD>
+                          <TD><button onClick={()=>setDetailObra(o)} style={{padding:"2px 8px",fontSize:11}}>Ver</button></TD>
+                        </tr>
+                      );
+                    })}
+                    <tr style={{background:"var(--surface-1)"}}>
+                      <TD/><TD style={{fontWeight:500}}>TOTALES</TD><TD/>
+                      <TD style={{fontWeight:500,color:"#0ca30c"}}>{fmt(tot.ingresos)}</TD>
+                      <TD style={{fontWeight:500,color:"#d03b3b"}}>{fmt(tot.gastoTotal)}</TD>
+                      <TD style={{fontWeight:500,color:tot.margen>=0?"#0ca30c":"#d03b3b"}}>{fmt(tot.margen)}</TD>
+                      <TD style={{fontWeight:500}}>{pct(tot.ingresos>0?(tot.margen/tot.ingresos)*100:0)}</TD>
+                      <TD/>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ OBRAS ═══ */}
+        {tab==="obras"&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+              <h2 style={{margin:0,fontSize:16,fontWeight:500}}>Control de obras</h2>
+              <button onClick={()=>{setOF({nombre:"",cliente:"",inicio:"",fin:"",estado:"Abierta",presupuesto:""});setMO("new");}} style={{background:"var(--fill-accent)",color:"#fff",border:"none",padding:"6px 14px",fontWeight:500,display:"flex",alignItems:"center",gap:6}}>
+                <i className="ti ti-plus" style={{fontSize:14}}/>Nueva obra
+              </button>
+            </div>
+            <div style={{display:"grid",gap:10}}>
+              {obraFin.map(o=>{
+                const s=sem(o.pctMargen), ejec=o.presupuesto>0?Math.min(100,(o.ingresos/o.presupuesto)*100):0;
+                return(
+                  <div key={o.id} style={{background:"var(--surface-2)",border:"0.5px solid var(--border)",borderRadius:12,overflow:"hidden"}}>
+                    <div style={{padding:"12px 14px",borderBottom:"0.5px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+                      <div>
+                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
+                          <i className={`ti ${s.icon}`} style={{color:s.color,fontSize:15}}/>
+                          <span style={{fontWeight:500,fontSize:14}}>{o.nombre}</span>
+                          <Badge color={o.estado==="Cerrada"?"gray":o.estado==="Pausada"?"yellow":"green"}>{o.estado}</Badge>
+                        </div>
+                        <p style={{margin:0,fontSize:11,color:"var(--text-muted)"}}>{o.cliente} · {o.inicio} → {o.fin} · {o.horas}h</p>
+                      </div>
+                      <button onClick={()=>{setOF({...o,presupuesto:String(o.presupuesto)});setMO(o.id);}} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,padding:"4px 10px"}}>
+                        <i className="ti ti-edit" style={{fontSize:13}}/>Editar
+                      </button>
+                    </div>
+                    <div style={{padding:"12px 14px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:8}}>
+                      <Stat label="Presupuesto"   value={fmtK(o.presupuesto)}/>
+                      <Stat label="Ingresos"      value={fmtK(o.ingresos)}      color="#0ca30c"/>
+                      <Stat label="Coste personal" value={fmtK(o.costePersonal)} color="#eda100"/>
+                      <Stat label="Gasto proveed." value={fmtK(o.gastosFact)}   color="#eb6834"/>
+                      <Stat label="Gasto total"   value={fmtK(o.gastoTotal)}    color="#d03b3b"/>
+                      <Stat label="Margen"        value={fmtK(o.margen)}        color={o.margen>=0?"#185FA5":"#d03b3b"} sub={pct(o.pctMargen)}/>
+                    </div>
+                    <div style={{padding:"0 14px 12px"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text-muted)",marginBottom:3}}>
+                        <span>Ejecución vs presupuesto</span><span>{ejec.toFixed(0)}%</span>
+                      </div>
+                      <MiniBar value={o.ingresos} max={o.presupuesto} color={ejec>100?"#d03b3b":"#2a78d6"}/>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ═══ PERSONAL ═══ */}
+        {tab==="personal"&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+              <h2 style={{margin:0,fontSize:16,fontWeight:500}}>Control de personal</h2>
+              <div style={{display:"flex",gap:8}}>
+                <input placeholder="Buscar…" value={searchW} onChange={e=>setSearchW(e.target.value)} style={{width:120,padding:"5px 10px"}}/>
+                <button onClick={()=>{setWF({nombre:"",categoria:"Oficial 1ª",costeHora:"",activo:true});setMW("new");}} style={{background:"var(--fill-accent)",color:"#fff",border:"none",padding:"6px 12px",fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
+                  <i className="ti ti-plus" style={{fontSize:13}}/>Trabajador
+                </button>
+              </div>
+            </div>
+            <div style={{display:"grid",gap:10}}>
+              {wStats.filter(w=>w.nombre.toLowerCase().includes(searchW.toLowerCase())).map(w=>(
+                <div key={w.id} style={{background:"var(--surface-2)",border:"0.5px solid var(--border)",borderRadius:12,padding:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8,marginBottom:10}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{width:36,height:36,borderRadius:99,background:"#e6f1fb",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:500,color:"#185FA5",flexShrink:0}}>
+                        {w.nombre.split(" ").slice(0,2).map(n=>n[0]).join("")}
+                      </div>
+                      <div>
+                        <p style={{margin:0,fontWeight:500,fontSize:14}}>{w.nombre}</p>
+                        <p style={{margin:0,fontSize:12,color:"var(--text-muted)"}}>{w.categoria} · {fmt(w.costeHora)}/h</p>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      <Badge color={w.activo?"green":"gray"}>{w.activo?"Activo":"Inactivo"}</Badge>
+                      <button onClick={()=>{setWF({...w,costeHora:String(w.costeHora)});setMW(w.id);}} style={{display:"flex",alignItems:"center",gap:4,fontSize:12,padding:"3px 8px"}}><i className="ti ti-edit" style={{fontSize:12}}/>Editar</button>
+                      <button onClick={()=>{setVF({trabajadorId:w.id,desde:"",hasta:"",tipo:"Vacaciones"});setMV("new");}} style={{display:"flex",alignItems:"center",gap:4,fontSize:12,padding:"3px 8px"}}><i className="ti ti-sun" style={{fontSize:12}}/>Ausencia</button>
+                    </div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(90px,1fr))",gap:6,marginBottom:8}}>
+                    <Stat label="Días trab."   value={w.dias}/>
+                    <Stat label="Horas tot."   value={`${w.totalHoras}h`}/>
+                    <Stat label="Coste imput." value={fmtK(w.totalCoste)} color="#185FA5"/>
+                  </div>
+                  {w.vacs.length>0&&(
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                      {w.vacs.map(v=>(
+                        <span key={v.id} style={{fontSize:11,background:"#faeeda",color:"#854F0B",padding:"2px 8px",borderRadius:99,display:"flex",alignItems:"center",gap:4}}>
+                          <i className="ti ti-sun" style={{fontSize:10}}/>{v.tipo}: {v.desde}→{v.hasta}
+                          <button onClick={()=>setVacaciones(p=>p.filter(x=>x.id!==v.id))} style={{background:"none",border:"none",color:"#854F0B",padding:0,fontSize:13,lineHeight:1,cursor:"pointer"}}>×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ═══ IMPUTACIONES ═══ */}
+        {tab==="imputaciones"&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+              <h2 style={{margin:0,fontSize:16,fontWeight:500}}>Imputación de horas</h2>
+              <div style={{display:"flex",gap:8}}>
+                <select value={filterObra} onChange={e=>setFilterObra(e.target.value)} style={{fontSize:12}}>
+                  <option value="all">Todas las obras</option>
+                  {obras.map(o=><option key={o.id} value={o.id}>{o.nombre}</option>)}
+                </select>
+                <button onClick={()=>{setIF({obraId:obras[0]?.id||"",trabajadorId:workers[0]?.id||"",fecha:"",horas:"",concepto:""});setMI("new");}} style={{background:"var(--fill-accent)",color:"#fff",border:"none",padding:"6px 12px",fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
+                  <i className="ti ti-plus" style={{fontSize:13}}/>Nueva
+                </button>
+              </div>
+            </div>
+            <div style={{background:"var(--surface-2)",border:"0.5px solid var(--border)",borderRadius:12,overflow:"hidden"}}>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead><tr>{["Fecha","Obra","Trabajador","Horas","€/h","Coste","Concepto",""].map(h=><TH key={h}>{h}</TH>)}</tr></thead>
+                  <tbody>
+                    {imputaciones.filter(i=>filterObra==="all"||i.obraId===parseInt(filterObra)).map(i=>{
+                      const o=obras.find(x=>x.id===i.obraId),w=workers.find(x=>x.id===i.trabajadorId);
+                      return(
+                        <tr key={i.id}>
+                          <TD>{i.fecha}</TD><TD style={{fontWeight:500}}>{o?.nombre}</TD><TD>{w?.nombre}</TD>
+                          <TD><b>{i.horas}h</b></TD><TD>{fmt(w?.costeHora||0)}</TD>
+                          <TD style={{fontWeight:500,color:"#185FA5"}}>{fmt((w?.costeHora||0)*i.horas)}</TD>
+                          <TD style={{color:"var(--text-muted)"}}>{i.concepto}</TD>
+                          <TD><button onClick={()=>setImputaciones(p=>p.filter(x=>x.id!==i.id))} style={{background:"none",border:"none",color:"#d03b3b",fontSize:12,padding:0}}>Eliminar</button></TD>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ FACTURAS ═══ */}
+        {tab==="facturas"&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+              <h2 style={{margin:0,fontSize:16,fontWeight:500}}>Facturas</h2>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <select value={filterObra} onChange={e=>setFilterObra(e.target.value)} style={{fontSize:12}}>
+                  <option value="all">Todas las obras</option>
+                  {obras.map(o=><option key={o.id} value={o.id}>{o.nombre}</option>)}
+                </select>
+                <select value={filterTipo} onChange={e=>setFilterTipo(e.target.value)} style={{fontSize:12}}>
+                  <option value="all">Todos</option><option value="cobro">Cobros</option><option value="gasto">Gastos</option>
+                </select>
+                <button onClick={()=>{setFF({obraId:obras[0]?.id||"",tipo:"gasto",proveedor:"",concepto:"",base:"",iva:21,fecha:"",pagada:false,numFactura:""});setMF("new");}} style={{background:"var(--fill-accent)",color:"#fff",border:"none",padding:"6px 12px",fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
+                  <i className="ti ti-plus" style={{fontSize:13}}/>Nueva
+                </button>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8,marginBottom:14}}>
+              <Stat label="Total cobros" value={fmtK(facturas.filter(f=>f.tipo==="cobro").reduce((s,f)=>s+f.base,0))} color="#0ca30c"/>
+              <Stat label="Total gastos" value={fmtK(facturas.filter(f=>f.tipo==="gasto").reduce((s,f)=>s+f.base,0))} color="#d03b3b"/>
+              <Stat label="Cobros pend." value={fmtK(facturas.filter(f=>f.tipo==="cobro"&&!f.pagada).reduce((s,f)=>s+f.base*(1+f.iva/100),0))} color="#fab219"/>
+              <Stat label="Pagos pend."  value={fmtK(facturas.filter(f=>f.tipo==="gasto"&&!f.pagada).reduce((s,f)=>s+f.base*(1+f.iva/100),0))} color="#eb6834"/>
+            </div>
+            <div style={{background:"var(--surface-2)",border:"0.5px solid var(--border)",borderRadius:12,overflow:"hidden"}}>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead><tr>{["Nº","Fecha","Tipo","Obra","Emisor","Base","IVA","Total","Estado",""].map(h=><TH key={h}>{h}</TH>)}</tr></thead>
+                  <tbody>
+                    {facturas.filter(f=>(filterObra==="all"||f.obraId===parseInt(filterObra))&&(filterTipo==="all"||f.tipo===filterTipo)).map(f=>{
+                      const o=obras.find(x=>x.id===f.obraId),iva=f.base*f.iva/100;
+                      return(
+                        <tr key={f.id}>
+                          <TD style={{fontFamily:"monospace",fontSize:11}}>{f.numFactura}</TD>
+                          <TD>{f.fecha}</TD>
+                          <TD><Badge color={f.tipo==="cobro"?"green":"red"}>{f.tipo==="cobro"?"Cobro":"Gasto"}</Badge></TD>
+                          <TD style={{maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o?.nombre}</TD>
+                          <TD>{f.proveedor}</TD><TD>{fmt(f.base)}</TD>
+                          <TD style={{color:"var(--text-muted)"}}>{f.iva}%</TD>
+                          <TD style={{fontWeight:500}}>{fmt(f.base+iva)}</TD>
+                          <TD><button onClick={()=>setFacturas(p=>p.map(x=>x.id===f.id?{...x,pagada:!x.pagada}:x))} style={{background:"none",border:"none",padding:0}}><Badge color={f.pagada?"green":"yellow"}>{f.pagada?"Pagada":"Pendiente"}</Badge></button></TD>
+                          <TD><button onClick={()=>setFacturas(p=>p.filter(x=>x.id!==f.id))} style={{background:"none",border:"none",color:"#d03b3b",fontSize:13,padding:0}}>×</button></TD>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ ALERTAS ═══ */}
+        {tab==="alertas"&&(
+          <div>
+            <h2 style={{margin:"0 0 14px",fontSize:16,fontWeight:500}}>Alertas activas</h2>
+            {alertas.length===0
+              ? <div style={{textAlign:"center",padding:40,color:"var(--text-muted)"}}><i className="ti ti-circle-check" style={{fontSize:40,color:"#0ca30c",display:"block",marginBottom:8}}/>Sin alertas. Todo en orden.</div>
+              : <div style={{display:"grid",gap:8}}>{alertas.map((a,i)=>{
+                  const cfg={danger:{bg:"#fcebeb",border:"#f7c1c1",text:"#A32D2D",icon:"ti-alert-circle"},warning:{bg:"#faeeda",border:"#FAC775",text:"#854F0B",icon:"ti-alert-triangle"},info:{bg:"#e6f1fb",border:"#b5d4f4",text:"#185FA5",icon:"ti-info-circle"}}[a.tipo];
+                  return <div key={i} style={{background:cfg.bg,border:`0.5px solid ${cfg.border}`,borderRadius:10,padding:"12px 14px",display:"flex",gap:10}}><i className={`ti ${cfg.icon}`} style={{color:cfg.text,fontSize:18,flexShrink:0,marginTop:1}}/><div><p style={{margin:0,fontWeight:500,fontSize:13,color:cfg.text}}>{a.obra}</p><p style={{margin:0,fontSize:12,color:cfg.text,opacity:.85}}>{a.msg}</p></div></div>;
+                })}</div>
+            }
+          </div>
+        )}
+      </div>
+
+      {/* ═══ DETAIL MODAL ═══ */}
+      {detailObra&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000,padding:16}}>
+          <div style={{background:"var(--surface-2)",border:"0.5px solid var(--border)",borderRadius:12,width:"100%",maxWidth:520,maxHeight:"90vh",overflow:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",borderBottom:"0.5px solid var(--border)"}}>
+              <h3 style={{margin:0,fontSize:15,fontWeight:500}}>{detailObra.nombre}</h3>
+              <button onClick={()=>setDetailObra(null)} style={{background:"none",border:"none",fontSize:22,color:"var(--text-muted)"}}>×</button>
+            </div>
+            <div style={{padding:18}}>
+              {(()=>{
+                const o=obraFin.find(x=>x.id===detailObra.id); if(!o) return null;
+                return(<>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+                    <Stat label="Ingresos"      value={fmt(o.ingresos)}     color="#0ca30c"/>
+                    <Stat label="Gasto total"   value={fmt(o.gastoTotal)}   color="#d03b3b"/>
+                    <Stat label="Coste personal" value={fmt(o.costePersonal)} color="#eda100"/>
+                    <Stat label="Gasto proveed." value={fmt(o.gastosFact)}   color="#eb6834"/>
+                    <Stat label="Margen"        value={fmt(o.margen)}       color={o.margen>=0?"#185FA5":"#d03b3b"}/>
+                    <Stat label="% Margen"      value={pct(o.pctMargen)}    color={sem(o.pctMargen).color}/>
+                  </div>
+                  <p style={{fontSize:11,fontWeight:500,color:"var(--text-muted)",margin:"0 0 6px"}}>DESGLOSE FISCAL</p>
+                  <div style={{background:"var(--surface-1)",borderRadius:8,padding:12,fontSize:13,marginBottom:14}}>
+                    {[["Base cobros",fmt(o.ingresos)],["IVA repercutido",fmt(o.ivaC)],["Base gastos",fmt(o.gastosFact)],["IVA soportado",fmt(o.ivaG)]].map(([l,v])=>(
+                      <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"0.5px solid var(--border)"}}><span style={{color:"var(--text-secondary)"}}>{l}</span><b>{v}</b></div>
+                    ))}
+                    <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 0",fontWeight:500,color:o.ivaC-o.ivaG>0?"#d03b3b":"#0ca30c"}}>
+                      <span>{o.ivaC-o.ivaG>0?"IVA a ingresar":"IVA a compensar"}</span><b>{fmt(Math.abs(o.ivaC-o.ivaG))}</b>
+                    </div>
+                  </div>
+                  <p style={{fontSize:11,fontWeight:500,color:"var(--text-muted)",margin:"0 0 6px"}}>HORAS ({o.horas}h total)</p>
+                  {workers.map(w=>{
+                    const imps=o.imps.filter(i=>i.trabajadorId===w.id); if(!imps.length) return null;
+                    const h=imps.reduce((s,i)=>s+i.horas,0);
+                    return <div key={w.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"0.5px solid var(--border)",fontSize:13}}><span>{w.nombre} <span style={{color:"var(--text-muted)"}}>({w.categoria})</span></span><span><b>{h}h</b> · {fmt(h*w.costeHora)}</span></div>;
+                  })}
+                </>);
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ FORM MODALS ═══ */}
+      {mW&&<Modal title={mW==="new"?"Nuevo trabajador":"Editar trabajador"} onClose={()=>setMW(null)} onSave={()=>{const w={id:mW==="new"?nextId(workers):mW,...wF,costeHora:parseFloat(wF.costeHora)||0};setWorkers(p=>mW==="new"?[...p,w]:p.map(x=>x.id===w.id?w:x));setMW(null);}}>
+        <Field label="Nombre"><Inp value={wF.nombre} onChange={v=>setWF(p=>({...p,nombre:v}))}/></Field>
+        <Field label="Categoría"><Sel value={wF.categoria} onChange={v=>setWF(p=>({...p,categoria:v}))} options={CATEGORIAS}/></Field>
+        <Field label="Coste/hora (€)"><Inp type="number" value={wF.costeHora} onChange={v=>setWF(p=>({...p,costeHora:v}))}/></Field>
+        <Field label="Estado"><Sel value={wF.activo?"true":"false"} onChange={v=>setWF(p=>({...p,activo:v==="true"}))} options={[{v:"true",l:"Activo"},{v:"false",l:"Inactivo"}]}/></Field>
+      </Modal>}
+
+      {mO&&<Modal title={mO==="new"?"Nueva obra":"Editar obra"} onClose={()=>setMO(null)} onSave={()=>{const o={id:mO==="new"?nextId(obras):mO,...oF,presupuesto:parseFloat(oF.presupuesto)||0};setObras(p=>mO==="new"?[...p,o]:p.map(x=>x.id===o.id?o:x));setMO(null);}}>
+        <Field label="Nombre"><Inp value={oF.nombre} onChange={v=>setOF(p=>({...p,nombre:v}))}/></Field>
+        <Field label="Cliente"><Inp value={oF.cliente} onChange={v=>setOF(p=>({...p,cliente:v}))}/></Field>
+        <Field label="Presupuesto (€)"><Inp type="number" value={oF.presupuesto} onChange={v=>setOF(p=>({...p,presupuesto:v}))}/></Field>
+        <Field label="Fecha inicio"><Inp type="date" value={oF.inicio} onChange={v=>setOF(p=>({...p,inicio:v}))}/></Field>
+        <Field label="Fecha fin"><Inp type="date" value={oF.fin} onChange={v=>setOF(p=>({...p,fin:v}))}/></Field>
+        <Field label="Estado"><Sel value={oF.estado} onChange={v=>setOF(p=>({...p,estado:v}))} options={ESTADOS_OBRA}/></Field>
+      </Modal>}
+
+      {mI&&<Modal title="Nueva imputación" onClose={()=>setMI(null)} onSave={()=>{setImputaciones(p=>[...p,{id:nextId(imputaciones),obraId:parseInt(iF.obraId),trabajadorId:parseInt(iF.trabajadorId),fecha:iF.fecha,horas:parseFloat(iF.horas)||0,concepto:iF.concepto}]);setMI(null);}}>
+        <Field label="Obra"><Sel value={iF.obraId} onChange={v=>setIF(p=>({...p,obraId:v}))} options={obras.map(o=>({v:o.id,l:o.nombre}))}/></Field>
+        <Field label="Trabajador"><Sel value={iF.trabajadorId} onChange={v=>setIF(p=>({...p,trabajadorId:v}))} options={workers.map(w=>({v:w.id,l:`${w.nombre} · ${fmt(w.costeHora)}/h`}))}/></Field>
+        <Field label="Fecha"><Inp type="date" value={iF.fecha} onChange={v=>setIF(p=>({...p,fecha:v}))}/></Field>
+        <Field label="Horas"><Inp type="number" value={iF.horas} onChange={v=>setIF(p=>({...p,horas:v}))}/></Field>
+        <Field label="Concepto"><Inp value={iF.concepto} onChange={v=>setIF(p=>({...p,concepto:v}))} placeholder="Descripción…"/></Field>
+      </Modal>}
+
+      {mF&&<Modal title="Nueva factura" onClose={()=>setMF(null)} onSave={()=>{setFacturas(p=>[...p,{id:nextId(facturas),obraId:parseInt(fF.obraId),tipo:fF.tipo,proveedor:fF.proveedor,concepto:fF.concepto,base:parseFloat(fF.base)||0,iva:parseFloat(fF.iva)||21,fecha:fF.fecha,pagada:fF.pagada,numFactura:fF.numFactura||`F-${Date.now()}`}]);setMF(null);}}>
+        <Field label="Nº Factura"><Inp value={fF.numFactura} onChange={v=>setFF(p=>({...p,numFactura:v}))} placeholder="F-2026-XXX"/></Field>
+        <Field label="Obra"><Sel value={fF.obraId} onChange={v=>setFF(p=>({...p,obraId:v}))} options={obras.map(o=>({v:o.id,l:o.nombre}))}/></Field>
+        <Field label="Tipo"><Sel value={fF.tipo} onChange={v=>setFF(p=>({...p,tipo:v}))} options={[{v:"gasto",l:"Gasto (proveedor)"},{v:"cobro",l:"Cobro (cliente)"}]}/></Field>
+        <Field label="Proveedor / Cliente"><Inp value={fF.proveedor} onChange={v=>setFF(p=>({...p,proveedor:v}))}/></Field>
+        <Field label="Concepto"><Inp value={fF.concepto} onChange={v=>setFF(p=>({...p,concepto:v}))}/></Field>
+        <Field label="Base imponible (€)"><Inp type="number" value={fF.base} onChange={v=>setFF(p=>({...p,base:v}))}/></Field>
+        <Field label="IVA"><Sel value={fF.iva} onChange={v=>setFF(p=>({...p,iva:v}))} options={IVA_OPTS.map(x=>({v:x,l:`${x}%`}))}/></Field>
+        <Field label="Fecha"><Inp type="date" value={fF.fecha} onChange={v=>setFF(p=>({...p,fecha:v}))}/></Field>
+        <Field label="Estado"><Sel value={fF.pagada?"true":"false"} onChange={v=>setFF(p=>({...p,pagada:v==="true"}))} options={[{v:"false",l:"Pendiente"},{v:"true",l:"Pagada / Cobrada"}]}/></Field>
+      </Modal>}
+
+      {mV&&<Modal title="Registrar ausencia" onClose={()=>setMV(null)} onSave={()=>{setVacaciones(p=>[...p,{id:nextId(vacaciones),trabajadorId:parseInt(vF.trabajadorId),desde:vF.desde,hasta:vF.hasta,tipo:vF.tipo}]);setMV(null);}}>
+        <Field label="Trabajador"><Sel value={vF.trabajadorId} onChange={v=>setVF(p=>({...p,trabajadorId:v}))} options={workers.map(w=>({v:w.id,l:w.nombre}))}/></Field>
+        <Field label="Tipo"><Sel value={vF.tipo} onChange={v=>setVF(p=>({...p,tipo:v}))} options={TIPOS_AUSENCIA}/></Field>
+        <Field label="Desde"><Inp type="date" value={vF.desde} onChange={v=>setVF(p=>({...p,desde:v}))}/></Field>
+        <Field label="Hasta"><Inp type="date" value={vF.hasta} onChange={v=>setVF(p=>({...p,hasta:v}))}/></Field>
+      </Modal>}
+
+      {showQR&&<ShareModal onClose={()=>setShowQR(false)}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
